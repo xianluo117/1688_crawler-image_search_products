@@ -103,12 +103,18 @@ celerybeat-schedule
 
 # Environments
 .env
+.env.*
+!.env.example
 .venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Runtime secrets and encrypted browser cookies
+runtime/
+*.cookies.enc
 
 # Spyder project settings
 .spyderproject

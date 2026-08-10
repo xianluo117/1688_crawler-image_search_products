@@ -1,0 +1,22 @@
+[Unit]
+Description=1688 Cookie Sync Service
+After=network.target
+
+[Service]
+Type=simple
+User=ali1688
+Group=ali1688
+WorkingDirectory=/opt/1688-crawler
+EnvironmentFile=/etc/ali1688-cookie-sync.env
+ExecStart=/opt/1688-crawler/.venv/bin/uvicorn lib.cookie_sync.api:create_app --factory --host 127.0.0.1 --port 8765 --workers 1 --no-access-log
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/1688-crawler/runtime
+
+[Install]
+WantedBy=multi-user.target

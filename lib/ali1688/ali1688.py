@@ -72,7 +72,7 @@ class Ali1688Upload(Token):
         )
         return {"data": data}
 
-    def upload(self, filename: str) -> requests.request:
+    def upload(self, filename: str) -> requests.Response:
         # upload image
         t = now()
         data = self.get_data(filename=filename)
@@ -84,7 +84,7 @@ class Ali1688Upload(Token):
             params=params,
             headers=headers,
             data=data,
-            cookies=self.cookies.get_dict(),
+            cookies=self.cookie_dict(),
         )
         return req
 

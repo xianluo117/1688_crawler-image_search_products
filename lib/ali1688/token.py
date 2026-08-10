@@ -1,71 +1,53 @@
 import time
-from typing import Dict, Optional
-from requests.cookies import RequestsCookieJar
-from lib.func_txy import get_headers, request_get, calculate_md5_hash
+from typing import Dict
 
-from config.setting import (
-    ali1688_api_key,
-    ali1688_v,
-    ali1688_jsv,
-    ali1688_token_api,
-    ali1688_host,
-)
+from requests.cookies import RequestsCookieJar, cookiejar_from_dict
+
+from config.setting import ali1688_api_key
+from lib.cookie_sync.settings import CookieStorageSettings
+from lib.cookie_sync.storage import CookieStorageError, EncryptedCookieStore
+from lib.func_txy import calculate_md5_hash
 
 
-class Token(object):
-    def __init__(self):
-        self.cookies: Optional[RequestsCookieJar] = None
-        self.token_request()
+class Token:
+    def __init__(self) -> None:
+        settings = CookieStorageSettings.from_env()
+        store = EncryptedCookieStore(settings.cookie_file, settings.encryption_key)
+        try:
+            cookie_dict = store.as_requests_cookie_dict()
+        except CookieStorageError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+        self.cookies: RequestsCookieJar = cookiejar_from_dict(cookie_dict)
 
     @property
-    def token_url(self):
-        return f"https://{ali1688_host}/h5/{ali1688_token_api.lower()}/{ali1688_v}/"
-
-    @property
-    def t(self):
-        return int(time.time())
+    def t(self) -> int:
+        return int(time.time() * 1000)
 
     def get_sign(self, data: str, t: int, token: str) -> str:
         text = f"{token}&{t}&{ali1688_api_key}&{data}"
-        sign_str = calculate_md5_hash(text)
-        return sign_str
-
-    def get_token_params(self) -> Dict[str, str]:
-        params = {
-            "jsv": ali1688_jsv,
-            "appKey": ali1688_api_key,
-            "t": self.t,
-            "api": ali1688_token_api,
-            "v": ali1688_v,
-            "type": "json",
-            "dataType": "jsonp",
-            "callback": "mtopjsonp1",
-            "preventFallback": True,
-            "data": {},
-        }
-        return params
-
-    def token_headers(self):
-        headers = get_headers()
-        headers["authority"] = "h5api.m.1688.com"
-        headers["Referer"] = "https://www.1688.com/"
-        return headers
-
-    def token_request(self):
-        params = self.get_token_params()
-        req = request_get(
-            url=self.token_url, params=params, headers=self.token_headers()
-        )
-        self.cookies = req.cookies
+        return calculate_md5_hash(text)
 
     @property
-    def token(self):
-        if not self.cookies or not self.cookies.get("_m_h5_tk", ""):
-            raise Exception("cookie not found _m_h5_tk")
+    def token(self) -> str:
+        token_cookie = self.cookies.get("_m_h5_tk", "")
+        if not token_cookie:
+            raise RuntimeError(
+                "同步 Cookie 中不存在 _m_h5_tk，请在 PC 浏览器重新同步"
+            )
 
-        cookie_list = self.cookies.get("_m_h5_tk", "").split("_")
-        if len(cookie_list) < 2:
-            raise Exception("cookie _m_h5_tk not found '_' ")
+        token_parts = token_cookie.split("_", 1)
+        if len(token_parts) != 2 or not token_parts[0]:
+            raise RuntimeError("同步 Cookie 中的 _m_h5_tk 格式无效")
 
-        token: str = cookie_list[0]
-        return token
+        try:
+            expires_at_ms = int(token_parts[1])
+        except ValueError as exc:
+            raise RuntimeError("同步 Cookie 中的 _m_h5_tk 过期时间无效") from exc
+
+        if expires_at_ms <= int(time.time() * 1000):
+            raise RuntimeError("同步 Cookie 中的 _m_h5_tk 已过期，请重新同步")
+        return token_parts[0]
+
+    def cookie_dict(self) -> Dict[str, str]:
+        return self.cookies.get_dict()

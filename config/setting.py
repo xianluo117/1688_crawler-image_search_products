@@ -7,7 +7,3 @@ ali1688_token_api = "mtop.ovs.traffic.landing.seotaglist.queryHotSearchWord"
 ali1688_upload_api = "mtop.1688.imageService.putImage"
 ali1688_upload_app_name = "searchImageUpload"
 ali1688_upload_app_key = "pvvljh1grxcmaay2vgpe9nb68gg9ueg2"
-
-world_taobao_api = "mtop.relationrecommend.WirelessRecommend.recommend"
-world_taobao_api_id = "34850"
-world_taobao_api_v = "2.0"

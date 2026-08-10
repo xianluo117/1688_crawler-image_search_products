@@ -1,37 +1,35 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from lib import alibaba, yiwugo
-from lib.ali1688 import ali1688
-from lib.world_taobao.world_taobao import WorldTaobao
+import argparse
 
-if __name__ == "__main__":
-    path = "data/down.jpeg"
+from lib.ali1688.ali1688 import Ali1688Upload
 
-    upload = ali1688.Ali1688Upload()
-    res = upload.upload(filename=path)
-    print(res.json())
 
-    image_id = res.json().get("data", {}).get("imageId", "")
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="1688 图片上传与以图搜货链接生成")
+    parser.add_argument(
+        "image",
+        nargs="?",
+        default="data/down.jpeg",
+        help="需要上传的图片路径，默认：data/down.jpeg",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    upload = Ali1688Upload()
+    response = upload.upload(filename=args.image)
+    response.raise_for_status()
+
+    payload = response.json()
+    image_id = payload.get("data", {}).get("imageId", "")
     if not image_id:
-        raise Exception("not image id")
+        raise RuntimeError("1688 图片上传失败：响应中不存在 imageId")
+
     print(upload.image_search_url(image_id=image_id))
 
-    taobao_upload = WorldTaobao()
-    res = taobao_upload.upload(filename=path)
-    if res.json().get("data"):
-        print("taobao_upload success")
 
-    # alibaba example
-    upload = alibaba.Upload()
-    image_key = upload.upload(filename=path)
-    print(f"{image_key}")
-
-    image_searh = alibaba.ImageSearch()
-    req = image_searh.search(image_key=image_key)
-    print(req.url)
-
-    # # yiwugo
-    yiwugo = yiwugo.YiWuGo()
-    res = yiwugo.upload(path)
-    assert "起购" in res.text, "yiwugo search error"
+if __name__ == "__main__":
+    main()
