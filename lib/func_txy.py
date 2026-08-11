@@ -1,7 +1,6 @@
 # !/usr/bin/python
 # -*- coding: utf-8 -*-
 
-import contextlib
 import random
 import string
 import time
@@ -17,27 +16,25 @@ def calculate_md5_hash(text: str):
 def request_post(
     url, params=None, data=None, files=None, headers=None, timeout=10, cookies=None
 ):
-    with contextlib.closing(
-        requests.post(
-            url=url,
-            params=params,
-            data=data,
-            files=files,
-            headers=headers,
-            cookies=cookies,
-            timeout=timeout,
-        )
-    ) as req:
-        return req
+    return requests.post(
+        url=url,
+        params=params,
+        data=data,
+        files=files,
+        headers=headers,
+        cookies=cookies,
+        timeout=timeout,
+    )
 
 
 def request_get(url, params=None, headers=None, timeout=10, cookies=None):
-    with contextlib.closing(
-        requests.get(
-            url=url, params=params, headers=headers, cookies=cookies, timeout=timeout
-        )
-    ) as req:
-        return req
+    return requests.get(
+        url=url,
+        params=params,
+        headers=headers,
+        cookies=cookies,
+        timeout=timeout,
+    )
 
 
 def get_random_str(k):

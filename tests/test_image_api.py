@@ -12,6 +12,8 @@ API_KEY = "remote-api-key-value-" * 3
 
 
 class FakeResponse:
+    status_code = 200
+
     def raise_for_status(self) -> None:
         return None
 

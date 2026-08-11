@@ -1,4 +1,6 @@
 import json
+import logging
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -27,6 +29,9 @@ from lib.image_api import (
     verify_bearer_token,
 )
 from lib.image_download import ImageDownloadError, download_validated_image
+
+
+logger = logging.getLogger("uvicorn.error")
 
 
 class BrowserCookie(BaseModel):
@@ -178,10 +183,24 @@ def create_app(
         temporary_path: Path,
         image_type: str,
         image_bytes: int,
+        request_source: str,
     ) -> ImageSearchResponse:
+        started_at = time.monotonic()
+        logger.info(
+            "1688 upload started source=%s image_type=%s image_bytes=%d",
+            request_source,
+            image_type,
+            image_bytes,
+        )
         uploader = uploader_factory()
         upstream_response = await run_in_threadpool(
             uploader.upload, str(temporary_path)
+        )
+        logger.info(
+            "1688 upload response source=%s status_code=%d elapsed_seconds=%.2f",
+            request_source,
+            upstream_response.status_code,
+            time.monotonic() - started_at,
         )
         upstream_response.raise_for_status()
         payload = upstream_response.json()
@@ -189,6 +208,11 @@ def create_app(
         if not image_id:
             raise RuntimeError("1688 响应中不存在 imageId")
 
+        logger.info(
+            "1688 image search completed source=%s elapsed_seconds=%.2f",
+            request_source,
+            time.monotonic() - started_at,
+        )
         return ImageSearchResponse(
             image_id=image_id,
             search_url=uploader.image_search_url(image_id=image_id),
@@ -246,6 +270,7 @@ def create_app(
                 temporary_path,
                 image_type,
                 image_bytes,
+                "upload",
             )
         except ImageValidationError as exc:
             raise HTTPException(
@@ -253,6 +278,10 @@ def create_app(
                 detail=str(exc),
             ) from exc
         except (requests.RequestException, ValueError, RuntimeError) as exc:
+            logger.warning(
+                "1688 image search failed source=upload error_type=%s",
+                type(exc).__name__,
+            )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="1688 上游请求失败或当前 Cookie 已失效",
@@ -273,24 +302,42 @@ def create_app(
         authenticate_api(authorization)
 
         temporary_path: Optional[Path] = None
+        download_started_at = time.monotonic()
         try:
+            logger.info("remote image download started source=url")
             temporary_path, image_type, image_bytes = await run_in_threadpool(
                 image_downloader,
                 payload.image_url,
                 runtime_settings.upload_temp_dir,
                 runtime_settings.max_image_bytes,
             )
+            logger.info(
+                "remote image download completed source=url image_type=%s "
+                "image_bytes=%d elapsed_seconds=%.2f",
+                image_type,
+                image_bytes,
+                time.monotonic() - download_started_at,
+            )
             return await perform_image_search(
                 temporary_path,
                 image_type,
                 image_bytes,
+                "url",
             )
         except (ImageValidationError, ImageDownloadError) as exc:
+            logger.warning(
+                "remote image download rejected source=url error_type=%s",
+                type(exc).__name__,
+            )
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=str(exc),
             ) from exc
         except (requests.RequestException, ValueError, RuntimeError) as exc:
+            logger.warning(
+                "1688 image search failed source=url error_type=%s",
+                type(exc).__name__,
+            )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="1688 上游请求失败或当前 Cookie 已失效",

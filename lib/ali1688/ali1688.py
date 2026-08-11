@@ -25,6 +25,14 @@ from config.setting import (
 )
 
 
+ALI1688_CONNECT_TIMEOUT_SECONDS = 10
+ALI1688_READ_TIMEOUT_SECONDS = 90
+ALI1688_UPLOAD_TIMEOUT = (
+    ALI1688_CONNECT_TIMEOUT_SECONDS,
+    ALI1688_READ_TIMEOUT_SECONDS,
+)
+
+
 class Ali1688Upload(Token):
     def __init__(self):
         super(Ali1688Upload, self).__init__()
@@ -85,6 +93,7 @@ class Ali1688Upload(Token):
             headers=headers,
             data=data,
             cookies=self.cookie_dict(),
+            timeout=ALI1688_UPLOAD_TIMEOUT,
         )
         return req
 
