@@ -1,9 +1,6 @@
 services:
   ali1688-api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: ali1688-image-search-api:local
+    image: qingmiaoai/1688imagesearch:latest
     container_name: ali1688-image-search-api
     restart: unless-stopped
     environment:

@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile, status
@@ -26,6 +26,7 @@ from lib.image_api import (
     save_validated_upload,
     verify_bearer_token,
 )
+from lib.image_download import ImageDownloadError, download_validated_image
 
 
 class BrowserCookie(BaseModel):
@@ -54,6 +55,12 @@ class CookieSyncResponse(BaseModel):
     earliest_expiry: Optional[str]
 
 
+class ImageUrlSearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    image_url: str = Field(min_length=1, max_length=4096)
+
+
 class ImageSearchResponse(BaseModel):
     image_id: str
     search_url: str
@@ -71,6 +78,9 @@ def _validate_cookie_domains(cookies: List[BrowserCookie]) -> None:
 def create_app(
     settings: Optional[CookieSyncSettings] = None,
     uploader_factory: Callable[[], Ali1688Upload] = Ali1688Upload,
+    image_downloader: Callable[
+        [str, Path, int], Tuple[Path, str, int]
+    ] = download_validated_image,
 ) -> FastAPI:
     runtime_settings = settings or CookieSyncSettings.from_env()
     store = EncryptedCookieStore(
@@ -164,6 +174,38 @@ def create_app(
             earliest_expiry=cookie_expiry_summary(cookies),
         )
 
+    async def perform_image_search(
+        temporary_path: Path,
+        image_type: str,
+        image_bytes: int,
+    ) -> ImageSearchResponse:
+        uploader = uploader_factory()
+        upstream_response = await run_in_threadpool(
+            uploader.upload, str(temporary_path)
+        )
+        upstream_response.raise_for_status()
+        payload = upstream_response.json()
+        image_id = payload.get("data", {}).get("imageId", "")
+        if not image_id:
+            raise RuntimeError("1688 响应中不存在 imageId")
+
+        return ImageSearchResponse(
+            image_id=image_id,
+            search_url=uploader.image_search_url(image_id=image_id),
+            image_type=image_type,
+            image_bytes=image_bytes,
+        )
+
+    def authenticate_api(authorization: Optional[str]) -> None:
+        try:
+            verify_bearer_token(authorization, runtime_settings.api_key)
+        except ApiAuthenticationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=str(exc),
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from exc
+
     @app.post(
         "/api/v1/image-search",
         response_model=ImageSearchResponse,
@@ -174,14 +216,7 @@ def create_app(
         image: UploadFile = File(...),
         authorization: Optional[str] = Header(default=None),
     ) -> ImageSearchResponse:
-        try:
-            verify_bearer_token(authorization, runtime_settings.api_key)
-        except ApiAuthenticationError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=str(exc),
-                headers={"WWW-Authenticate": "Bearer"},
-            ) from exc
+        authenticate_api(authorization)
 
         content_length = request.headers.get("content-length")
         if content_length:
@@ -207,23 +242,50 @@ def create_app(
                 runtime_settings.upload_temp_dir,
                 runtime_settings.max_image_bytes,
             )
-            uploader = uploader_factory()
-            upstream_response = await run_in_threadpool(
-                uploader.upload, str(temporary_path)
-            )
-            upstream_response.raise_for_status()
-            payload = upstream_response.json()
-            image_id = payload.get("data", {}).get("imageId", "")
-            if not image_id:
-                raise RuntimeError("1688 响应中不存在 imageId")
-
-            return ImageSearchResponse(
-                image_id=image_id,
-                search_url=uploader.image_search_url(image_id=image_id),
-                image_type=image_type,
-                image_bytes=image_bytes,
+            return await perform_image_search(
+                temporary_path,
+                image_type,
+                image_bytes,
             )
         except ImageValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=str(exc),
+            ) from exc
+        except (requests.RequestException, ValueError, RuntimeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="1688 上游请求失败或当前 Cookie 已失效",
+            ) from exc
+        finally:
+            if temporary_path and temporary_path.exists():
+                temporary_path.unlink()
+
+    @app.post(
+        "/api/v1/image-search/url",
+        response_model=ImageSearchResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def image_search_by_url(
+        payload: ImageUrlSearchRequest,
+        authorization: Optional[str] = Header(default=None),
+    ) -> ImageSearchResponse:
+        authenticate_api(authorization)
+
+        temporary_path: Optional[Path] = None
+        try:
+            temporary_path, image_type, image_bytes = await run_in_threadpool(
+                image_downloader,
+                payload.image_url,
+                runtime_settings.upload_temp_dir,
+                runtime_settings.max_image_bytes,
+            )
+            return await perform_image_search(
+                temporary_path,
+                image_type,
+                image_bytes,
+            )
+        except (ImageValidationError, ImageDownloadError) as exc:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=str(exc),
