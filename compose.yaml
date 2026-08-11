@@ -13,6 +13,8 @@ services:
       ALI1688_UPLOAD_TEMP_DIR: /app/runtime/uploads
     ports:
       - '127.0.0.1:8765:8765'
+    networks:
+      - ali1688-network
     volumes:
       - ./runtime:/app/runtime
     read_only: true
@@ -32,3 +34,8 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+networks:
+  ali1688-network:
+    driver: bridge
+    enable_ipv6: true

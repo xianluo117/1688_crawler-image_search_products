@@ -28,6 +28,7 @@ RUN groupadd --system --gid 10001 ali1688 \
     && chown -R ali1688:ali1688 /app
 
 COPY --from=builder --chown=ali1688:ali1688 /app/.venv /app/.venv
+COPY deploy/gai.conf /etc/gai.conf
 COPY --chown=ali1688:ali1688 config ./config
 COPY --chown=ali1688:ali1688 lib ./lib
 COPY --chown=ali1688:ali1688 main.py ./main.py

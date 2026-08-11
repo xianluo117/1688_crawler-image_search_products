@@ -12,8 +12,9 @@ Cookie 使用 HMAC-SHA256 验签后加密保存。远程图片搜索使用独立
 推荐方式：
 
 - Linux
-- Docker Engine
+- Docker Engine，启用 IPv6
 - Docker Compose v2
+- 宿主机具备可用的 IPv6 出口
 - 已配置 HTTPS 的域名
 - Nginx、Caddy 或其他 HTTPS 反向代理
 - 支持 `GM_cookie` 的 Tampermonkey 或 Violentmonkey
@@ -90,10 +91,17 @@ chown -R 10001:10001 runtime
 
 ### 2. 拉取并启动
 
+`compose.yaml` 为项目 bridge 网络启用了 IPv6。Docker daemon 也必须开启 IPv6，修改 daemon 配置后需要重启 Docker。
+
+首次启动或启用 IPv6 后，需要重建项目网络：
+
 ```bash
+docker compose down
 docker compose pull
-docker compose up -d
+docker compose up -d --force-recreate
 ```
+
+执行 `docker compose down` 不会删除挂载在宿主机 `runtime/` 中的 Cookie 文件。禁止附加 `-v`，否则可能删除其他命名卷。
 
 查看状态：
 
@@ -118,6 +126,14 @@ docker compose up -d
 ```
 
 Cookie 文件保存在宿主机 `runtime/ali1688.cookies.enc`。执行 `docker compose down` 不会删除该文件。
+
+验证容器 IPv6：
+
+```bash
+docker compose exec ali1688-api python -c "import socket; print([x[4][0] for x in socket.getaddrinfo('h5api.m.1688.com', 443, type=socket.SOCK_STREAM)])"
+```
+
+运行镜像通过 `/etc/gai.conf` 对双栈目标优先使用原生 IPv6，并保留 IPv4 回退。该配置用于避开部分服务器到 1688 IPv4 CDN 的 TLS 链路异常。
 
 ## HTTPS 反向代理
 
